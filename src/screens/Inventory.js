@@ -2,7 +2,11 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, TextInput, SafeAreaView, KeyboardAvoidingView, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons'; 
 
-export default function Inventory({ inventory, onUpdate }) {
+// 1. I-import ang db ug functions
+import { db } from '../../firebase'; // Siguroha nga sakto ang folder path padulong sa firebase.js
+import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
+
+export default function Inventory({ inventory }) {
   const [modal, setModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   
@@ -20,25 +24,43 @@ export default function Inventory({ inventory, onUpdate }) {
     setModal(true);
   };
 
-  const saveEdit = () => {
-    const newList = inventory.map(i => 
-      i.id === editItem.id ? { 
-        ...i, 
-        name: pName, 
-        cost: parseFloat(pCost || 0), 
-        price: parseFloat(pPrice || 0), 
-        qty: parseInt(pQty || 0) 
-      } : i
-    );
-    onUpdate(newList);
-    setModal(false);
-    Alert.alert("Updated", "Inventory record has been modified.");
+  // 2. Updated saveEdit para sa Firebase
+  const saveEdit = async () => {
+    if (!editItem) return;
+
+    try {
+      const itemRef = doc(db, "inventory", editItem.id);
+      await updateDoc(itemRef, {
+        name: pName,
+        cost: parseFloat(pCost || 0),
+        price: parseFloat(pPrice || 0),
+        qty: parseInt(pQty || 0)
+      });
+
+      setModal(false);
+      Alert.alert("Success", "Product updated in cloud.");
+    } catch (error) {
+      console.error("Error updating document: ", error);
+      Alert.alert("Error", "Failed to update product.");
+    }
   };
 
+  // 3. Updated deleteItem para sa Firebase
   const deleteItem = (item) => {
     Alert.alert("Delete Product", `Are you sure you want to remove ${item.name}?`, [
       { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => onUpdate(inventory.filter(i => i.id !== item.id)) }
+      { 
+        text: "Delete", 
+        style: "destructive", 
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, "inventory", item.id));
+            // Dili na kinahanglan tawgon ang onUpdate kay ang onSnapshot sa App.js ang mupapas ani sa list
+          } catch (error) {
+            Alert.alert("Error", "Could not delete item.");
+          }
+        } 
+      }
     ]);
   };
 
@@ -100,7 +122,6 @@ export default function Inventory({ inventory, onUpdate }) {
         })}
       </ScrollView>
 
-      {/* EDIT MODAL */}
       <Modal visible={modal} transparent animationType="fade">
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBg}>
           <View style={styles.modalContent}>
@@ -144,26 +165,21 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 32, fontWeight: '800', color: '#1C1C1E' },
   headerSub: { fontSize: 13, color: '#8E8E93', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1 },
   searchBtn: { backgroundColor: '#FFF', padding: 10, borderRadius: 12, elevation: 2, shadowOpacity: 0.1 },
-  
   card: { backgroundColor: '#FFF', borderRadius: 24, padding: 20, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
   cardTitle: { fontSize: 20, fontWeight: '700', color: '#1C1C1E', marginBottom: 5 },
-  
   stockBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   lowStockBg: { backgroundColor: '#FF3B3015' },
   normalStockBg: { backgroundColor: '#E8F5E9' },
   stockText: { fontSize: 10, fontWeight: 'bold' },
   lowStockText: { color: '#FF3B30' },
   normalStockText: { color: '#2E7D32' },
-  
   actionRow: { flexDirection: 'row' },
   actionBtn: { marginLeft: 15 },
-
   statsContainer: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#F2F2F7', paddingTop: 15 },
   statBox: { alignItems: 'flex-start' },
   statLabel: { fontSize: 9, fontWeight: '800', color: '#AEAEB2', marginBottom: 4 },
   statValue: { fontSize: 15, fontWeight: '700', color: '#1C1C1E' },
-
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: '#FFF', borderRadius: 30, padding: 25 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },

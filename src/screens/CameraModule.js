@@ -2,9 +2,13 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal, TextInput, ScrollView, Dimensions } from 'react-native';
 import { CameraView } from 'expo-camera';
 
-const { height } = Dimensions.get('window');
+// Firebase Imports
+import { db } from '../../firebase'; 
+import { doc, setDoc, collection, writeBatch } from 'firebase/firestore';
 
-export default function CameraModule({ mode, inventory, sales, onClose, onUpdate }) {
+const { height, width } = Dimensions.get('window');
+
+export default function CameraModule({ mode, inventory, onClose }) {
   const [scanned, setScanned] = useState(false);
   const [cart, setCart] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -19,29 +23,31 @@ export default function CameraModule({ mode, inventory, sales, onClose, onUpdate
   const [pCost, setPCost] = useState(''); 
   const [pPrice, setPPrice] = useState(''); 
   const [pQty, setPQty] = useState('');
-  const [discount, setDiscount] = useState('0');
 
+  // --- HANDLE SCAN ---
   const handleScan = ({ data }) => {
     if (scanned || formModal || qtyModal || checkModal || viewCartModal) return;
     
     setScanned(true);
-    const found = inventory.find(i => i.id === data);
-    setBarcode(data);
+    const scannedData = String(data).trim();
+    setBarcode(scannedData);
+
+    const found = inventory.find(i => String(i.id).trim() === scannedData);
 
     if (mode === 'CHECK') {
       if (found) {
         setSelectedProduct(found);
         setCheckModal(true);
       } else {
-        Alert.alert("Error", "Item not found.", [{ text: "Retry", onPress: () => setScanned(false) }]);
+        Alert.alert("Wala Makita", `Barcode: ${scannedData}\nItem not registered.`, [{ text: "Retry", onPress: () => setScanned(false) }]);
       }
     } 
     else if (mode === 'ADD') {
       if (found) {
         setSelectedProduct(found);
-        setPName(found.name);
-        setPCost(found.cost?.toString() || '');
-        setPPrice(found.price?.toString() || '');
+        setPName(found.name || '');
+        setPCost(found.cost?.toString() || '0');
+        setPPrice(found.price?.toString() || '0');
         setPQty(found.qty?.toString() || '0');
       } else {
         setSelectedProduct(null);
@@ -51,86 +57,112 @@ export default function CameraModule({ mode, inventory, sales, onClose, onUpdate
     } 
     else if (mode === 'SELL') {
       if (found) {
-        if (parseInt(found.qty) <= 0) {
-          Alert.alert("Out of Stock", found.name + " is empty.", [{ text: "OK", onPress: () => setScanned(false) }]);
+        if (parseInt(found.qty || 0) <= 0) {
+          Alert.alert("Hurot na", found.name + " is out of stock.", [{ text: "OK", onPress: () => setScanned(false) }]);
           return;
         }
         setSelectedProduct(found);
         setPQty('1');
         setQtyModal(true);
       } else {
-        Alert.alert("Unknown Barcode", "Please register this item in ADD mode first.", [{ text: "OK", onPress: () => setScanned(false) }]);
+        Alert.alert("Wala Makita", "I-register una kini sa ADD mode.", [{ text: "OK", onPress: () => setScanned(false) }]);
       }
     }
   };
 
-  // --- KINI NGA PART ANG GI-UPDATE PARA SA SELL LOGIC ---
+  // --- ADD TO CART (DILI MAG DUPLICATE) ---
   const handleAddToCart = () => {
     const q = parseInt(pQty);
     if (!q || q <= 0) return Alert.alert("Error", "Enter valid quantity");
     
-    const existingIndex = cart.findIndex(item => item.id === selectedProduct.id);
+    const existingIndex = cart.findIndex(item => String(item.id) === String(selectedProduct.id));
 
     if (existingIndex > -1) {
       const updatedCart = [...cart];
-      const newQty = updatedCart[existingIndex].cartQty + q;
-
-      if (newQty > parseInt(selectedProduct.qty)) {
-        Alert.alert("Insufficient", "Total in cart exceeds stock. Only " + selectedProduct.qty + " available.");
+      const newTotalQty = updatedCart[existingIndex].cartQty + q;
+      
+      if (newTotalQty > parseInt(selectedProduct.qty)) {
+        Alert.alert("Dili Paigo", `Stocks available: ${selectedProduct.qty}`);
         return;
       }
 
-      updatedCart[existingIndex].cartQty = newQty;
-      updatedCart[existingIndex].subtotal = updatedCart[existingIndex].price * newQty;
+      updatedCart[existingIndex].cartQty = newTotalQty;
+      updatedCart[existingIndex].subtotal = updatedCart[existingIndex].price * newTotalQty;
       setCart(updatedCart);
     } else {
-      if (q > parseInt(selectedProduct.qty)) return Alert.alert("Insufficient Stock");
+      if (q > parseInt(selectedProduct.qty)) return Alert.alert("Dili Paigo ang Stock");
       setCart([...cart, { ...selectedProduct, cartQty: q, subtotal: selectedProduct.price * q }]);
     }
-
     setQtyModal(false); 
     setScanned(false);
   };
 
-  const processCheckout = () => {
+  // --- CHECKOUT ---
+  const processCheckout = async () => {
     if (cart.length === 0) return;
+    const batch = writeBatch(db);
     const today = new Date().toISOString().split('T')[0];
-    const totalDiscount = parseFloat(discount) || 0;
-    
-    const updatedInventory = inventory.map(invItem => {
-      const soldItem = cart.find(c => c.id === invItem.id);
-      return soldItem ? { ...invItem, qty: (parseInt(invItem.qty) - soldItem.cartQty).toString() } : invItem;
-    });
 
-    const newSalesBatch = cart.map(item => ({
-      id: Date.now().toString() + Math.random(),
-      date: today,
-      itemName: item.name,
-      sellingPrice: item.price,
-      capitalPrice: item.cost || 0,
-      qtySold: item.cartQty,
-      total: item.subtotal - (totalDiscount / cart.length),
-      profit: ((item.price - (item.cost || 0)) * item.cartQty) - (totalDiscount / cart.length)
-    }));
+    try {
+      for (const item of cart) {
+        const itemRef = doc(db, "inventory", String(item.id));
+        const newQtyValue = (parseInt(item.qty) - item.cartQty).toString();
+        batch.update(itemRef, { qty: newQtyValue });
 
-    onUpdate(updatedInventory, [...newSalesBatch, ...sales]);
-    setCart([]);
-    setDiscount('0');
-    setViewCartModal(false);
-    onClose();
-    Alert.alert("Done", "Transaction Successful!");
+        const salesRef = doc(collection(db, "sales"));
+        batch.set(salesRef, {
+          date: today,
+          itemName: item.name,
+          sellingPrice: item.price,
+          capitalPrice: item.cost || 0,
+          qtySold: item.cartQty,
+          total: item.subtotal,
+          profit: (item.price - (item.cost || 0)) * item.cartQty,
+          createdAt: new Date()
+        });
+      }
+
+      await batch.commit();
+      setCart([]);
+      setViewCartModal(false);
+      onClose();
+      Alert.alert("Success", "Transaction Complete!");
+    } catch (error) {
+      Alert.alert("Error", "Cloud sync failed. Siguroha nga naka-Create na ang Database sa Firebase.");
+    }
   };
 
-  const grandTotal = cart.reduce((a, b) => a + b.subtotal, 0) - (parseFloat(discount) || 0);
+  // --- SAVE ITEM ---
+  const handleSaveItem = async () => {
+    if (!pName) return Alert.alert("Error", "Name is required");
+    try {
+      const itemRef = doc(db, "inventory", String(barcode));
+      await setDoc(itemRef, {
+        name: pName,
+        cost: parseFloat(pCost || 0),
+        price: parseFloat(pPrice || 0),
+        qty: pQty.toString(),
+        updatedAt: new Date()
+      }, { merge: true });
+
+      setFormModal(false);
+      setScanned(false);
+      Alert.alert("Saved", "Item updated in Cloud!");
+    } catch (error) {
+      Alert.alert("Error", "Failed to save.");
+    }
+  };
+
+  const grandTotal = cart.reduce((a, b) => a + b.subtotal, 0);
 
   return (
     <View style={styles.fullScreen}>
       <CameraView 
         style={StyleSheet.absoluteFillObject} 
         onBarcodeScanned={scanned ? undefined : handleScan}
-        barcodeScannerSettings={{ barcodeTypes: ["ean13", "ean8", "upc_a", "qr", "code128"] }}
       />
       
+      {/* SCANNER UI */}
       <View style={styles.overlay}>
         <View style={styles.scannerFrame}>
           <View style={[styles.corner, styles.tl]} />
@@ -138,17 +170,21 @@ export default function CameraModule({ mode, inventory, sales, onClose, onUpdate
           <View style={[styles.corner, styles.bl]} />
           <View style={[styles.corner, styles.br]} />
         </View>
-        <View style={styles.modeBadge}><Text style={styles.badgeText}>{mode} MODE ACTIVE</Text></View>
+        <View style={styles.modeBadge}><Text style={styles.badgeText}>{mode} MODE</Text></View>
       </View>
 
+      {/* BOTTOM BAR */}
       <View style={styles.bottomBar}>
         {mode === 'SELL' && cart.length > 0 && (
-          <TouchableOpacity style={styles.cartSummary} onPress={() => setViewCartModal(true)}>
-            <View>
-              <Text style={styles.cartBtnText}>🛒 {cart.length} ITEMS IN CART</Text>
-              <Text style={styles.cartSubText}>Tap to review & checkout</Text>
+          <TouchableOpacity style={styles.cartSummaryBar} onPress={() => setViewCartModal(true)}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cartBtnText}>🛒 {cart.length} Items in Cart</Text>
+              <Text style={styles.latestItemText} numberOfLines={1}>Latest: {cart[cart.length - 1].name}</Text>
             </View>
-            <Text style={styles.cartAmount}>₱{cart.reduce((a, b) => a + b.subtotal, 0).toFixed(2)}</Text>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={styles.totalDueMiniLabel}>TOTAL DUE</Text>
+              <Text style={styles.cartAmount}>₱{grandTotal.toFixed(2)}</Text>
+            </View>
           </TouchableOpacity>
         )}
         <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
@@ -156,6 +192,34 @@ export default function CameraModule({ mode, inventory, sales, onClose, onUpdate
         </TouchableOpacity>
       </View>
 
+      {/* MODAL: REGISTER / ADD ITEM */}
+      <Modal visible={formModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.formCard}>
+            <Text style={styles.modalTitle}>{selectedProduct ? 'Edit Product' : 'Register New Item'}</Text>
+            <Text style={styles.barcInfo}>Barcode: {barcode}</Text>
+            <TextInput placeholder="Item Name" value={pName} style={styles.input} onChangeText={setPName} />
+            <View style={styles.row}>
+                <View style={{flex:1, marginRight:5}}>
+                    <Text style={styles.label}>Cost Price</Text>
+                    <TextInput value={pCost} style={styles.input} keyboardType="numeric" onChangeText={setPCost} />
+                </View>
+                <View style={{flex:1, marginLeft:5}}>
+                    <Text style={styles.label}>Sell Price</Text>
+                    <TextInput value={pPrice} style={styles.input} keyboardType="numeric" onChangeText={setPPrice} />
+                </View>
+            </View>
+            <Text style={styles.label}>Available Stocks</Text>
+            <TextInput value={pQty} style={styles.input} keyboardType="numeric" onChangeText={setPQty} />
+            <View style={styles.row}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => {setFormModal(false); setScanned(false);}}><Text>CANCEL</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveItem}><Text style={styles.btnText}>SAVE ITEM</Text></TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: PRICE INQUIRY */}
       <Modal visible={checkModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.priceCard}>
@@ -170,43 +234,12 @@ export default function CameraModule({ mode, inventory, sales, onClose, onUpdate
         </View>
       </Modal>
 
-      <Modal visible={formModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.formCard}>
-            <Text style={styles.modalTitle}>{selectedProduct ? 'Edit Product' : 'Register New Item'}</Text>
-            <Text style={styles.barcInfo}>Barcode: {barcode}</Text>
-            <TextInput placeholder="Item Name" value={pName} style={styles.input} onChangeText={setPName} />
-            <View style={styles.row}>
-                <View style={{flex:1, marginRight:5}}>
-                    <Text style={styles.label}>Cost Price</Text>
-                    <TextInput placeholder="0.00" value={pCost} style={styles.input} keyboardType="numeric" onChangeText={setPCost} />
-                </View>
-                <View style={{flex:1, marginLeft:5}}>
-                    <Text style={styles.label}>Sell Price</Text>
-                    <TextInput placeholder="0.00" value={pPrice} style={styles.input} keyboardType="numeric" onChangeText={setPPrice} />
-                </View>
-            </View>
-            <Text style={styles.label}>Available Stocks</Text>
-            <TextInput placeholder="0" value={pQty} style={styles.input} keyboardType="numeric" onChangeText={setPQty} />
-            <View style={styles.row}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => {setFormModal(false); setScanned(false);}}><Text>CANCEL</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.saveBtn} onPress={() => {
-                const updated = { id: barcode, name: pName, cost: parseFloat(pCost || 0), price: parseFloat(pPrice || 0), qty: pQty };
-                const newList = inventory.find(i => i.id === barcode) ? inventory.map(i => i.id === barcode ? updated : i) : [...inventory, updated];
-                onUpdate(newList, sales);
-                setFormModal(false); setScanned(false);
-              }}><Text style={styles.btnText}>SAVE ITEM</Text></TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       {/* MODAL: QUANTITY INPUT */}
       <Modal visible={qtyModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.formCard, {alignItems:'center'}]}>
             <Text style={styles.modalTitle}>How many pcs?</Text>
-            <Text style={{color:'#007AFF', fontWeight:'bold', fontSize:18, marginBottom:15}}>{selectedProduct?.name}</Text>
+            <Text style={{color:'#007AFF', fontWeight:'bold', fontSize:22, marginBottom:10}}>{selectedProduct?.name}</Text>
             <TextInput value={pQty} style={styles.qtyInput} keyboardType="numeric" onChangeText={setPQty} autoFocus selectTextOnFocus />
             <View style={styles.row}>
               <TouchableOpacity style={[styles.cancelBtn, {width:'40%'}]} onPress={() => {setQtyModal(false); setScanned(false);}}><Text>CANCEL</Text></TouchableOpacity>
@@ -216,43 +249,52 @@ export default function CameraModule({ mode, inventory, sales, onClose, onUpdate
         </View>
       </Modal>
 
-      {/* MODAL: FINAL CART & CHECKOUT (Kini ang gi-update ang Layout) */}
+      {/* MODAL: CART SUMMARY (DAKO NGA VIEW) */}
       <Modal visible={viewCartModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.fullCard}>
-            <Text style={styles.modalTitle}>Cart Summary</Text>
-            <ScrollView style={{flex: 1, marginBottom: 15}}>
+            <View style={styles.modalHeader}>
+                <Text style={styles.cartSummaryTitle}>Cart Summary</Text>
+                <TouchableOpacity style={styles.closeBtnHeader} onPress={() => setViewCartModal(false)}>
+                    <Text style={styles.closeBtnHeaderText}>CLOSE</Text>
+                </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={{ flex: 1, marginVertical: 15 }}>
               {cart.map((item, index) => (
                 <View key={index} style={styles.cartRow}>
-                  <View style={{flex: 1}}>
-                    {/* DISPLAY SA NAME */}
-                    <Text style={{fontWeight: 'bold', fontSize: 16}}>{item.name}</Text>
-                    {/* DISPLAY SA QUANTITY (cartQty) */}
-                    <Text style={{fontSize: 14, color:'#007AFF'}}>{item.cartQty} pcs x ₱{item.price.toFixed(2)}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.itemNameDisplay}>{item.name}</Text>
+                    <Text style={styles.itemQtyDisplay}>{item.cartQty} pcs x ₱{item.price.toFixed(2)}</Text>
                   </View>
-                  <Text style={{fontWeight: 'bold', fontSize: 16, color: '#28A745'}}>₱{item.subtotal.toFixed(2)}</Text>
-                  <TouchableOpacity onPress={() => { const c = [...cart]; c.splice(index, 1); setCart(c); }} style={{marginLeft:15, padding: 5}}>
-                    <Text style={{color:'red', fontSize:18, fontWeight: 'bold'}}>✕</Text>
-                  </TouchableOpacity>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.itemSubtotalDisplay}>₱{item.subtotal.toFixed(2)}</Text>
+                    <TouchableOpacity style={styles.removeAction} onPress={() => { 
+                      const c = [...cart]; 
+                      c.splice(index, 1); 
+                      setCart(c); 
+                    }}>
+                      <Text style={styles.removeActionText}>REMOVE</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ))}
             </ScrollView>
             
-            <View style={styles.footer}>
-                <View style={styles.rowBetween}>
-                    <Text style={{fontWeight: 'bold'}}>Total Items:</Text>
-                    {/* DISPLAY SA TOTAL COUNT SA ITEMS */}
-                    <Text style={{fontWeight: 'bold'}}>{cart.reduce((a, b) => a + b.cartQty, 0)} pcs</Text>
+            <View style={styles.cartFooter}>
+                <View style={styles.totalRow}>
+                    <Text style={styles.totalLabel}>Total Quantity:</Text>
+                    <Text style={styles.totalValue}>{cart.reduce((a, b) => a + b.cartQty, 0)} pcs</Text>
                 </View>
-                <View style={styles.rowBetween}>
-                    <Text style={{fontSize: 20, fontWeight: 'bold'}}>TOTAL DUE:</Text>
-                    <Text style={{fontSize: 24, fontWeight: 'bold', color: '#28A745'}}>₱{grandTotal.toFixed(2)}</Text>
+                <View style={styles.totalRow}>
+                    <Text style={styles.finalDueLabel}>TOTAL DUE:</Text>
+                    <Text style={styles.finalDueAmount}>₱{grandTotal.toFixed(2)}</Text>
                 </View>
-                <TouchableOpacity style={styles.finalBtn} onPress={processCheckout}>
-                    <Text style={styles.finalBtnText}>COMPLETE TRANSACTION</Text>
+                <TouchableOpacity style={styles.completeBtn} onPress={processCheckout}>
+                    <Text style={styles.completeBtnText}>COMPLETE TRANSACTION</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => setViewCartModal(false)} style={{marginTop: 15, alignItems:'center'}}>
-                    <Text style={{color:'#007AFF', fontWeight: 'bold'}}>+ Add More Items</Text>
+                <TouchableOpacity style={styles.addMoreBtn} onPress={() => setViewCartModal(false)}>
+                    <Text style={styles.addMoreText}>+ Add More Items</Text>
                 </TouchableOpacity>
             </View>
           </View>
@@ -264,43 +306,59 @@ export default function CameraModule({ mode, inventory, sales, onClose, onUpdate
 
 const styles = StyleSheet.create({
   fullScreen: { flex: 1, backgroundColor: 'black' },
-  overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor:'rgba(0,0,0,0.2)' },
+  overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor:'rgba(0,0,0,0.1)' },
   scannerFrame: { width: 260, height: 180, position: 'relative' },
   corner: { position: 'absolute', width: 40, height: 40, borderColor: '#FFF', borderWidth: 5 },
   tl: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },
   tr: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 },
   bl: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
   br: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
-  modeBadge: { backgroundColor: 'rgba(0,122,255,0.9)', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 25, marginTop: 40 },
-  badgeText: { color: '#FFF', fontWeight: 'bold', fontSize: 14, letterSpacing: 1 },
+  modeBadge: { backgroundColor: 'rgba(0,122,255,0.9)', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, marginTop: 40 },
+  badgeText: { color: '#FFF', fontWeight: 'bold' },
   bottomBar: { position: 'absolute', bottom: 30, width: '100%', alignItems: 'center' },
-  cartSummary: { backgroundColor: '#FFF', width: '92%', padding: 18, borderRadius: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems:'center', elevation: 10, marginBottom: 15 },
+  cartSummaryBar: { backgroundColor: '#FFF', width: '92%', padding: 15, borderRadius: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems:'center', elevation: 10, marginBottom: 15 },
   cartBtnText: { color: '#007AFF', fontWeight: 'bold', fontSize: 16 },
-  cartSubText: { color: '#888', fontSize: 11 },
-  cartAmount: { fontSize: 22, fontWeight: 'bold', color: '#28A745' },
-  closeBtn: { backgroundColor: 'rgba(255,59,48,0.9)', paddingVertical: 15, paddingHorizontal: 40, borderRadius: 30 },
+  latestItemText: { color: '#666', fontSize: 12 },
+  totalDueMiniLabel: { fontSize: 10, color: '#888', fontWeight: 'bold' },
+  cartAmount: { fontSize: 24, fontWeight: 'bold', color: '#28A745' },
+  closeBtn: { backgroundColor: 'rgba(255,59,48,0.9)', paddingVertical: 15, paddingHorizontal: 50, borderRadius: 30 },
   closeBtnText: { color: '#FFF', fontWeight: 'bold' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: 20 },
-  priceCard: { backgroundColor: '#FFF', padding: 30, borderRadius: 30, alignItems: 'center' },
-  priceLabel: { color: '#888', fontSize: 12, fontWeight: 'bold' },
-  priceName: { fontSize: 22, fontWeight: 'bold', marginVertical: 10, textAlign:'center' },
-  priceValue: { fontSize: 55, fontWeight: 'bold', color: '#007AFF' },
-  priceStock: { color: '#FF9500', marginBottom: 25, fontWeight:'600' },
-  mainBtn: { backgroundColor: '#007AFF', width:'100%', padding: 18, borderRadius: 15, alignItems:'center' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: 15 },
   formCard: { backgroundColor: '#FFF', padding: 25, borderRadius: 25 },
   modalTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
   barcInfo: { fontSize: 12, color: '#666', textAlign: 'center', marginBottom: 15 },
   input: { backgroundColor: '#F2F2F7', padding: 15, borderRadius: 12, marginBottom: 15, fontSize: 16 },
-  label: { fontSize: 12, color: '#888', marginBottom: 5, marginLeft: 5 },
-  qtyInput: { fontSize: 60, textAlign: 'center', fontWeight: 'bold', color: '#007AFF', marginVertical: 20, width: '100%' },
-  fullCard: { backgroundColor: '#FFF', padding: 25, borderRadius: 30, maxHeight: '85%' },
+  label: { fontSize: 12, color: '#888', marginBottom: 5 },
+  qtyInput: { fontSize: 60, textAlign: 'center', fontWeight: 'bold', color: '#007AFF', marginVertical: 15 },
+  fullCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 30, height: '90%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 15 },
+  cartSummaryTitle: { fontSize: 24, fontWeight: 'bold' },
+  closeBtnHeader: { backgroundColor: '#FF3B30', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 10 },
+  closeBtnHeaderText: { color: '#FFF', fontWeight: 'bold' },
   cartRow: { flexDirection: 'row', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#F2F2F7', alignItems: 'center' },
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 10 },
-  saveBtn: { backgroundColor: '#007AFF', padding: 15, borderRadius: 15, alignItems: 'center' },
-  cancelBtn: { backgroundColor: '#E5E5EA', padding: 15, borderRadius: 15, alignItems: 'center', width: '45%' },
-  discInput: { backgroundColor: '#F2F2F7', width: 100, padding: 8, borderRadius: 8, textAlign: 'right', fontWeight:'bold' },
-  finalBtn: { backgroundColor: '#28A745', padding: 20, borderRadius: 18, alignItems: 'center', marginTop: 10 },
-  finalBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
-  btnText: { color: '#FFF', fontWeight: 'bold' }
+  itemNameDisplay: { fontWeight: 'bold', fontSize: 20, color: '#000' },
+  itemQtyDisplay: { fontSize: 16, color: '#007AFF', marginTop: 4 },
+  itemSubtotalDisplay: { fontWeight: 'bold', fontSize: 20, color: '#333' },
+  removeAction: { backgroundColor: '#FF3B30', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 5, marginTop: 8 },
+  removeActionText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
+  cartFooter: { borderTopWidth: 2, borderTopColor: '#F2F2F7', paddingTop: 15 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  totalLabel: { fontSize: 18, color: '#666' },
+  totalValue: { fontSize: 20, fontWeight: 'bold' },
+  finalDueLabel: { fontSize: 24, fontWeight: 'bold' },
+  finalDueAmount: { fontSize: 32, fontWeight: 'bold', color: '#28A745' },
+  completeBtn: { backgroundColor: '#28A745', padding: 20, borderRadius: 20, alignItems: 'center', marginTop: 10 },
+  completeBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 18 },
+  addMoreBtn: { marginTop: 15, alignItems: 'center' },
+  addMoreText: { color: '#007AFF', fontWeight: 'bold', fontSize: 16 },
+  row: { flexDirection: 'row', justifyContent: 'space-between' },
+  saveBtn: { backgroundColor: '#007AFF', padding: 15, borderRadius: 15, alignItems: 'center', width: '55%' },
+  cancelBtn: { backgroundColor: '#E5E5EA', padding: 15, borderRadius: 15, alignItems: 'center', width: '40%' },
+  btnText: { color: '#FFF', fontWeight: 'bold' },
+  priceCard: { backgroundColor: '#FFF', padding: 30, borderRadius: 30, alignItems: 'center' },
+  priceLabel: { color: '#888', fontSize: 12, fontWeight: 'bold' },
+  priceName: { fontSize: 26, fontWeight: 'bold', marginVertical: 10, textAlign:'center' },
+  priceValue: { fontSize: 60, fontWeight: 'bold', color: '#007AFF' },
+  priceStock: { color: '#FF9500', marginBottom: 25, fontWeight:'600', fontSize: 18 },
+  mainBtn: { backgroundColor: '#007AFF', width:'100%', padding: 20, borderRadius: 15, alignItems:'center' }
 });
