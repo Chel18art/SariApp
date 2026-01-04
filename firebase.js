@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCDf55x6uWkRrByKZmdAoDvNUoniMebtmI",
@@ -11,8 +11,14 @@ const firebaseConfig = {
   measurementId: "G-6N26V42SVH"
 };
 
-// Initialize Firebase
+// 1. Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore and export it
-export const db = getFirestore(app);
+// 2. Initialize Firestore with Offline Persistence & Long Polling
+// Ang 'experimentalForceLongPolling' makatabang para dili ma-timeout ang connection
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ 
+    tabManager: persistentMultipleTabManager() 
+  }),
+  experimentalForceLongPolling: true, // Importante ni para sa stable connection
+});

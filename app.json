@@ -13,26 +13,33 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.richelle_arat.SariApp"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
+      "package": "com.richelle_arat.SariApp",
+      "versionCode": 1,
       "permissions": [
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
         "CAMERA"
       ]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
     "plugins": [
-      "expo-barcode-scanner",
-      "@react-native-community/datetimepicker"
-    ]
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow SariApp to access your camera."
+        }
+      ],
+      "expo-barcode-scanner"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7ff1e132-8c8a-4dbb-bea7-e90e49b7cf35"
+      }
+    }
   }
 }

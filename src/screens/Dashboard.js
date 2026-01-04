@@ -7,28 +7,16 @@ const { width } = Dimensions.get('window');
 export default function Dashboard({ setView, setMode, sales, expenses = [] }) {
   const todayStr = new Date().toISOString().split('T')[0];
   
-  // 1. STATS LOGIC
+  // Logic for Today's Stats
   const dailySales = sales.filter(s => s.date === todayStr);
   const dailyExpenses = expenses.filter(e => e.date === todayStr);
 
   const todayRevenue = dailySales.reduce((a, b) => a + b.total, 0);
   const grossProfit = dailySales.reduce((a, b) => a + (b.profit || 0), 0);
   const totalExpenses = dailyExpenses.reduce((a, b) => a + b.amount, 0);
+  
+  // NET PROFIT = Margin minus Expenses
   const netProfit = grossProfit - totalExpenses;
-
-  // 2. FAST MOVING LOGIC (All time or per month)
-  const getFastMovingItems = () => {
-    const counts = {};
-    sales.forEach(s => {
-      counts[s.itemName] = (counts[s.itemName] || 0) + s.qtySold;
-    });
-    return Object.entries(counts)
-      .map(([name, qty]) => ({ name, qty }))
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 3); // Get top 3
-  };
-
-  const fastMoving = getFastMovingItems();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -37,7 +25,7 @@ export default function Dashboard({ setView, setMode, sales, expenses = [] }) {
         {/* WELCOME SECTION */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greet}>Business Overview</Text>
+            <Text style={styles.greet}>SARI APP</Text>
             <Text style={styles.date}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</Text>
           </View>
           <TouchableOpacity style={styles.profileBtn}>
@@ -69,22 +57,6 @@ export default function Dashboard({ setView, setMode, sales, expenses = [] }) {
           </View>
         </View>
 
-        {/* FAST MOVING SECTION - BAG-O NI */}
-        <Text style={styles.sectionTitle}>🔥 Fast Moving Items</Text>
-        <View style={styles.analyticsCard}>
-          {fastMoving.length > 0 ? fastMoving.map((item, index) => (
-            <View key={index} style={[styles.analyticsRow, index === fastMoving.length - 1 && { borderBottomWidth: 0 }]}>
-              <View style={styles.rankBadge}>
-                <Text style={styles.rankText}>{index + 1}</Text>
-              </View>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemQty}>{item.qty} sold</Text>
-            </View>
-          )) : (
-            <Text style={{color: '#8E8E93', textAlign: 'center'}}>No sales data yet</Text>
-          )}
-        </View>
-
         {/* MAIN MENU GRID */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.grid}>
@@ -94,6 +66,25 @@ export default function Dashboard({ setView, setMode, sales, expenses = [] }) {
           <MenuTile color="#FF9500" icon="plus-box-outline" label="Add Stock" sub="Restock Items" onPress={() => setMode('ADD')} />
           <MenuTile color="#34C759" icon="archive-outline" label="Inventory" sub="Stock Mgmt" onPress={() => setView('INVENTORY')} />
           <MenuTile color="#AF52DE" icon="file-document-outline" label="Reports" sub="Audit Log" onPress={() => setView('SALES')} />
+        </View>
+
+        {/* BOTTOM TILE */}
+        <TouchableOpacity style={styles.reportTile} onPress={() => setView('SALES')}>
+          <View style={styles.reportIconBg}>
+            <MaterialCommunityIcons name="chart-box-outline" size={26} color="#FFF" />
+          </View>
+          <View style={{flex: 1, marginLeft: 15}}>
+            <Text style={styles.reportTitle}>Financial Analytics</Text>
+            <Text style={styles.reportSub}>View history and PDF reports</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={24} color="#C7C7CC" />
+        </TouchableOpacity>
+
+        {/* --- COPYRIGHT SECTION --- */}
+        <View style={styles.copyrightContainer}>
+          <MaterialCommunityIcons name="shield-check-outline" size={16} color="#AEAEB2" />
+          <Text style={styles.copyrightText}>Developed by Richelle Mae Arat</Text>
+          <Text style={styles.versionText}>v1.0.2 Premium</Text>
         </View>
 
       </ScrollView>
@@ -127,18 +118,37 @@ const styles = StyleSheet.create({
   subLabel: { color: '#8E8E93', fontSize: 10, fontWeight: '700', marginBottom: 2 },
   subVal: { fontSize: 18, fontWeight: '700' },
 
-  // ANALYTICS STYLE
-  analyticsCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 15, elevation: 2 },
-  analyticsRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F2F2F7' },
-  rankBadge: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#F2F2F7', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  rankText: { fontSize: 12, fontWeight: '800', color: '#1C1C1E' },
-  itemName: { flex: 1, fontSize: 15, fontWeight: '600', color: '#1C1C1E' },
-  itemQty: { fontSize: 14, fontWeight: '700', color: '#007AFF' },
-
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1C1C1E', marginTop: 25, marginBottom: 15 },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#1C1C1E', marginTop: 30, marginBottom: 15 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  
   tile: { backgroundColor: '#FFF', width: '48%', padding: 20, borderRadius: 24, marginBottom: 15, elevation: 2 },
   iconContainer: { width: 50, height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   tileLabel: { fontSize: 15, fontWeight: '700', color: '#1C1C1E' },
-  tileSub: { fontSize: 11, color: '#AEAEB2', marginTop: 2 }
+  tileSub: { fontSize: 11, color: '#AEAEB2', marginTop: 2 },
+
+  reportTile: { backgroundColor: '#FFF', padding: 20, borderRadius: 24, flexDirection: 'row', alignItems: 'center', marginTop: 5, elevation: 2 },
+  reportIconBg: { backgroundColor: '#1C1C1E', padding: 12, borderRadius: 15 },
+  reportTitle: { fontSize: 16, fontWeight: '700', color: '#1C1C1E' },
+  reportSub: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
+
+  // COPYRIGHT STYLES
+  copyrightContainer: {
+    marginTop: 40,
+    marginBottom: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copyrightText: {
+    fontSize: 13,
+    color: '#8E8E93',
+    fontWeight: '700',
+    marginTop: 5,
+  },
+  versionText: {
+    fontSize: 10,
+    color: '#C7C7CC',
+    marginTop: 2,
+    letterSpacing: 1,
+    textTransform: 'uppercase'
+  }
 });
