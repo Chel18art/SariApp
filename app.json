@@ -2,13 +2,13 @@
   "expo": {
     "name": "SariApp",
     "slug": "SariApp",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/iconV2.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash-icon-v2.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -18,12 +18,15 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/adaptive-icon-2.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.richellearat.sariapp",
-      "versionCode": 1,
+      "versionCode": 2,
       "permissions": ["CAMERA"]
+    },
+    "web": {
+      "favicon": "./assets/faviconV2.png"
     },
     "plugins": [
       [
