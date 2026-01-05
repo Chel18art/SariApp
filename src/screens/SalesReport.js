@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, SafeAreaView, Platform, TextInput } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, SafeAreaView, Platform, TextInput, RefreshControl } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker'; // Ensure this is installed
+import DateTimePicker from '@react-native-community/datetimepicker'; 
 
 export default function SalesReport({ sales, onUpdate }) {
   const [filter, setFilter] = useState('DAILY');
@@ -14,15 +14,24 @@ export default function SalesReport({ sales, onUpdate }) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [optModal, setOptModal] = useState(false);
 
+  // --- ADDED REFRESH STATE ---
+  const [refreshing, setRefreshing] = useState(false);
+
+  // --- ADDED REFRESH FUNCTION ---
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1000);
+  }, []);
+
   const getFiltered = () => {
     const selDateStr = selectedDate.toISOString().split('T')[0];
     
     return sales.filter(s => {
-      // 1. Filter by Search Query (Item Name)
       const matchesSearch = s.itemName.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
 
-      // 2. Filter by Date/Time Range
       if (filter === 'DAILY') {
         return s.date === selDateStr;
       }
@@ -115,7 +124,6 @@ export default function SalesReport({ sales, onUpdate }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* 1. TOP NAV & DATE SELECTOR */}
       <View style={styles.header}>
         <View style={styles.topRow}>
           <Text style={styles.title}>Audit Log</Text>
@@ -125,7 +133,6 @@ export default function SalesReport({ sales, onUpdate }) {
           </TouchableOpacity>
         </View>
 
-        {/* 2. SEARCH BAR */}
         <View style={styles.searchContainer}>
           <MaterialCommunityIcons name="magnify" size={22} color="#888" />
           <TextInput 
@@ -137,7 +144,6 @@ export default function SalesReport({ sales, onUpdate }) {
         </View>
       </View>
 
-      {/* 3. QUICK STATS */}
       <View style={styles.statPill}>
         <View style={styles.statBox}>
           <Text style={styles.statLabel}>SALES</Text>
@@ -149,7 +155,6 @@ export default function SalesReport({ sales, onUpdate }) {
         </View>
       </View>
 
-      {/* 4. RANGE TABS */}
       <View style={styles.tabBar}>
         {['DAILY', 'WEEKLY', 'MONTHLY'].map(f => (
           <TouchableOpacity key={f} onPress={() => setFilter(f)} style={[styles.tab, filter === f && styles.activeTab]}>
@@ -158,8 +163,18 @@ export default function SalesReport({ sales, onUpdate }) {
         ))}
       </View>
 
-      {/* 5. TABLE DATA */}
-      <ScrollView style={styles.list}>
+      <ScrollView 
+        style={styles.list}
+        // --- ADDED REFRESH CONTROL PROPERTY ---
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh} 
+            tintColor="#007AFF" 
+            colors={["#007AFF"]}
+          />
+        }
+      >
         {filteredData.length === 0 ? (
           <Text style={styles.empty}>No matches found.</Text>
         ) : (
@@ -182,7 +197,6 @@ export default function SalesReport({ sales, onUpdate }) {
         )}
       </ScrollView>
 
-      {/* 6. EXPORT ACTION */}
       <View style={styles.footer}>
         <TouchableOpacity style={styles.exportBtn} onPress={generatePDF}>
           <MaterialCommunityIcons name="printer-eye" size={24} color="#FFF" />

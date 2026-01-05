@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react'; // Added useCallback
 import { 
   View, Text, StyleSheet, TouchableOpacity, ScrollView, 
-  Alert, Modal, TextInput, KeyboardAvoidingView, StatusBar, Platform 
-} from 'react-native';
+  Alert, Modal, TextInput, KeyboardAvoidingView, StatusBar, Platform, RefreshControl 
+} from 'react-native'; // Added RefreshControl
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { db } from '../../firebase'; 
 import { collection, onSnapshot, deleteDoc, doc, query, orderBy, addDoc, updateDoc } from 'firebase/firestore';
@@ -15,12 +15,24 @@ export default function Expenses() {
   const [modal, setModal] = useState(false);
   const [filterModal, setFilterModal] = useState(false);
   
-  // ADDED FOR EDIT FUNCTIONALITY
   const [editId, setEditId] = useState(null);
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+
+  // --- ADDED REFRESH STATE ---
+  const [refreshing, setRefreshing] = useState(false);
+
+  // --- ADDED REFRESH LOGIC ---
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    // Since we use onSnapshot, the data updates automatically, 
+    // but the spinner provides visual feedback to the user.
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1000);
+  }, []);
 
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const currentYear = 2026;
@@ -50,7 +62,6 @@ export default function Expenses() {
   const totalExpVal = filteredExpenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   const netProfit = totalSalesVal - totalExpVal;
 
-  // HANDLERS
   const handleOpenAdd = () => {
     setEditId(null);
     setTitle('');
@@ -162,8 +173,19 @@ export default function Expenses() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.mainScroll} showsVerticalScrollIndicator={false}>
-        
+      <ScrollView 
+        contentContainerStyle={styles.mainScroll} 
+        showsVerticalScrollIndicator={false}
+        // --- ADDED REFRESH CONTROL PROPERTY ---
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh} 
+            tintColor="#1C1C1E" 
+            colors={["#1C1C1E"]}
+          />
+        }
+      >
         <View style={styles.metricCard}>
           <Text style={styles.metricLabel}>NET CASH FLOW</Text>
           <Text style={[styles.metricValue, {color: netProfit >= 0 ? '#10AC84' : '#EE5253'}]}>
@@ -211,7 +233,6 @@ export default function Expenses() {
         ))}
       </ScrollView>
 
-      {/* MONTH SELECTOR */}
       <Modal visible={filterModal} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setFilterModal(false)}>
           <View style={styles.dropdownBox}>
@@ -224,7 +245,6 @@ export default function Expenses() {
         </TouchableOpacity>
       </Modal>
 
-      {/* ADD/EDIT MODAL */}
       <Modal visible={modal} animationType="slide" transparent>
         <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
           <View style={styles.bottomSheet}>

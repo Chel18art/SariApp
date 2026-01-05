@@ -14,18 +14,16 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.richelle_arat.SariApp"
+      "bundleIdentifier": "com.richellearat.sariapp"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.richelle_arat.SariApp",
+      "package": "com.richellearat.sariapp",
       "versionCode": 1,
-      "permissions": [
-        "CAMERA"
-      ]
+      "permissions": ["CAMERA"]
     },
     "plugins": [
       [
@@ -33,8 +31,7 @@
         {
           "cameraPermission": "Allow SariApp to access your camera."
         }
-      ],
-      "expo-barcode-scanner"
+      ]
     ],
     "extra": {
       "eas": {

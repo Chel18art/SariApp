@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, TextInput, SafeAreaView, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useCallback } from 'react'; // Added useCallback
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, TextInput, SafeAreaView, KeyboardAvoidingView, Platform, RefreshControl } from 'react-native'; // Added RefreshControl
 import { MaterialCommunityIcons } from '@expo/vector-icons'; 
 
 // Firebase imports
@@ -15,8 +15,19 @@ export default function Inventory({ inventory }) {
   const [pPrice, setPPrice] = useState('');
   const [pQty, setPQty] = useState('');
 
-  // 1. Logic para sa Search (Optional implementation)
+  // 1. Logic para sa Search
   const [searchQuery, setSearchQuery] = useState('');
+
+  // --- ADDED REFRESH STATE ---
+  const [refreshing, setRefreshing] = useState(false);
+
+  // --- ADDED REFRESH LOGIC ---
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1000);
+  }, []);
 
   const openEdit = (item) => {
     setEditItem(item);
@@ -86,7 +97,19 @@ export default function Inventory({ inventory }) {
         />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 100 }}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 100 }}
+        // --- ADDED REFRESH CONTROL PROPERTY ---
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh} 
+            tintColor="#007AFF" 
+            colors={["#007AFF"]}
+          />
+        }
+      >
         {filteredInventory.map(item => {
           // LOW STOCK LOGIC (Set to 5 units as threshold)
           const isLowStock = parseInt(item.qty) <= 5;
@@ -187,7 +210,7 @@ const styles = StyleSheet.create({
   searchBar: { flex: 1, marginLeft: 10, fontSize: 16, fontWeight: '600' },
 
   card: { backgroundColor: '#FFF', borderRadius: 24, padding: 20, marginBottom: 15, borderLeftWidth: 0 },
-  cardLowStock: { borderLeftWidth: 8, borderLeftColor: '#FF3B30' }, // Visual indicator for low stock
+  cardLowStock: { borderLeftWidth: 8, borderLeftColor: '#FF3B30' }, 
   
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
   cardTitle: { fontSize: 20, fontWeight: '700', color: '#1C1C1E' },
